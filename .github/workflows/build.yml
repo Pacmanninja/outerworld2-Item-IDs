@@ -20,6 +20,9 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    environment:  # ← HERE (job level!)
+      name: github-pages
+      url: https://pacmanninja.github.io/outerworld2-Item-IDs
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -68,9 +71,10 @@ jobs:
           with open('item_directory_built.html', 'w') as f:
               f.write(html)
           EOF
-          mv item_directory_built.html item_directory.html
+          mv item_directory_built.html item_directory.html || true
 
       - name: Commit built files
+        if: github.ref == 'refs/heads/main'
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "🤖 Auto-build: RAR → ${{ github.sha }} [skip ci]"
@@ -88,7 +92,4 @@ jobs:
 
       - name: Deploy to GitHub Pages
         if: github.ref == 'refs/heads/main'
-        environment:
-          name: github-pages
-          url: https://pacmanninja.github.io/outerworld2-Item-IDs
         uses: actions/deploy-pages@v4
