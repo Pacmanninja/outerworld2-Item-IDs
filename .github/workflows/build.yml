@@ -9,9 +9,9 @@ on:
     types: [ published ]
 
 permissions:
-  contents: write      # Auto-commit changes
-  pages: write         # Deploy to Pages
-  id-token: write      # OIDC auth
+  contents: write
+  pages: write
+  id-token: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -24,12 +24,10 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Full history for commits
+          fetch-depth: 0
 
       - name: Install system deps
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y unrar
+        run: sudo apt-get install -y unrar
 
       - name: Setup Python 3.12
         uses: actions/setup-python@v5
@@ -47,81 +45,50 @@ jobs:
       - name: Verify extraction
         run: |
           echo "=== Extracted files ==="
-          ls -la extracted/ *.txt items_generated.js 2>/dev/null || echo "No extracted/ dir"
+          ls -la extracted/ *.txt items_generated.js 2>/dev/null || echo "No extracted dir"
           echo "=== JS preview ==="
           head -20 items_generated.js || echo "No JS generated"
           echo "=== File count ==="
           find . -name "*.txt" | wc -l
 
-      - name: Embed JS into HTML (robust)
+      - name: Embed JS into HTML
         run: |
           python3 << 'EOF'
-          import re
-          import json
-          import sys
-          
-          try:
-              with open('items_generated.js', 'r') as f:
-                  js_content = f.read().strip()
-              
-              # Extract JSON object: const items = {...};
-              match = re.match(r'const\s+items\s*=\s*(\{.*?\});?\s*$', js_content, re.DOTALL)
-              if not match:
-                  print("ERROR: No valid 'const items = {...};' in items_generated.js")
-                  sys.exit(1)
-              
-              data = json.loads(match.group(1))
-              print(f"Loaded {sum(len(v) for v in data.values())} items across {len(data)} categories")
-              
-              with open('item_directory.html', 'r') as f:
-                  html = f.read()
-              
-              # Replace placeholder const items = [...] with real data
-              html = re.sub(
-                  r'const items = \[{2}.*?};',
-                  f'const items = {json.dumps(data, indent=2)};',
-                  html,
-                  flags=re.DOTALL
-              )
-              
-              with open('item_directory_built.html', 'w') as f:
-                  f.write(html)
-              
-              print("✅ HTML updated with live data")
-              
-          except FileNotFoundError as e:
-              print(f"❌ Missing file: {e}")
-              sys.exit(1)
-          except json.JSONDecodeError as e:
-              print(f"❌ Invalid JSON: {e}")
-              sys.exit(1)
-          except Exception as e:
-              print(f"❌ Error: {e}")
-              sys.exit(1)
+          import re, json, sys
+          with open('items_generated.js', 'r') as f:
+              js = f.read().strip()
+          match = re.match(r'const\s+items\s*=\s*(\{.*?\});?\s*$', js, re.DOTALL)
+          if not match:
+              print("❌ No valid JS"); sys.exit(1)
+          data = json.loads(match.group(1))
+          print(f"✅ Loaded {sum(len(v) for v in data.values())} items")
+          with open('item_directory.html', 'r') as f:
+              html = f.read()
+          html = re.sub(r'const items = \[{2}.*?};', f'const items = {json.dumps(data, indent=2)};', html, flags=re.DOTALL)
+          with open('item_directory_built.html', 'w') as f:
+              f.write(html)
           EOF
           mv item_directory_built.html item_directory.html
 
-      - name: Commit built artifacts
+      - name: Commit built files
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "🤖 Auto-build: RAR → ${{ github.sha }} [skip ci] [skip actions]"
-          file_pattern: |
-            item_directory.html
-            items_generated.js
-            *.txt
-          branch: main
+          commit_message: "🤖 Auto-build: RAR → ${{ github.sha }} [skip ci]"
+          file_pattern: "*.html items_generated.js *.txt"
 
-      - name: Setup Pages (if main)
+      - name: Setup Pages
         if: github.ref == 'refs/heads/main'
-        id: pages
         uses: actions/configure-pages@v5
 
-      - name: Upload Pages artifact (if main)
+      - name: Upload Pages artifact
         if: github.ref == 'refs/heads/main'
         uses: actions/upload-pages-artifact@v3
         with:
           path: '.'
 
-      - name: Deploy to GitHub Pages (if main)
+      - name: Deploy to GitHub Pages
         if: github.ref == 'refs/heads/main'
+        environment:
+          name: github-pages
+          url: https://pacmanninja.github.io/outerworld2-Item-IDs
         uses: actions/deploy-pages@v4
