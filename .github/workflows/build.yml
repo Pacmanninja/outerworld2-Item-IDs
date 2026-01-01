@@ -5,25 +5,27 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    - name: Install unrar
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Install Python deps
+      run: pip install rarfile
+    - name: Install unrar CLI
       run: sudo apt-get update && sudo apt-get install -y unrar
     - name: Extract RAR
       env:
         RAR_PASSWORD: ${{ secrets.RAR_PASSWORD }}
       run: |
         unrar x -p"$RAR_PASSWORD" OuterWorld2ItemIDs.rar extracted/
-        ls extracted/
-    - name: Setup Python & Parse
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.12'
+        ls -la extracted/
     - name: Parse TXT to JS
       run: python parse_rar.py
     - name: Embed & Cleanup
       run: |
-        cat itemsgenerated.js >> item_directory.html.tmp
-        sed -i '/const items =/d' item_directory.html.tmp
-        mv item_directory.html.tmp item_directory.html
+        sed -i '/const items =/c\const items = ' item_directory.html
+        cat itemsgenerated.js >> item_directory.html
+        echo ';' >> item_directory.html
         rm -rf extracted/ itemsgenerated.js *.txt *.rar
     - uses: stefanzweifel/git-auto-commit-action@v5
       with:
