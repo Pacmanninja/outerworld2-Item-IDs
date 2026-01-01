@@ -1,35 +1,55 @@
 name: Extract RAR → Build Directory
+
 on: [push, pull_request, workflow_dispatch, release]
+
+permissions:
+  contents: write  # For auto-commit
+  pages: write     # For gh-pages
+  id-token: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Install unrar & rarfile
-      run: |
-        sudo apt update
-        sudo apt install unrar -y
-        pip install rarfile requests
-    
-    - name: Extract/parse RAR
-      run: python parse_rar.py
-      
-    - name: Embed into HTML
-      run: |
-        awk '/const items =/{system("cat items_generated.js"); next} 1' item_directory.html > item_directory_built.html
-        mv item_directory_built.html item_directory.html
-    
-    - name: Commit built HTML
-      uses: stefanzweifel/git-auto-commit-action@v5
-      with:
-        commit_message: "🤖 Auto-build: RAR extracted & parsed"
-        file_pattern: item_directory.html
-    
-    - name: Deploy to Pages
-      if: github.ref == 'refs/heads/main'
-      uses: peaceiris/actions-gh-pages@v4
-      with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        publish_dir: ./
+      - uses: actions/checkout@v4
+
+      - name: Install deps
+        run: |
+          sudo apt update
+          sudo apt install -y unrar
+          pip install rarfile requests
+
+      - name: Extract/parse RAR
+        env:
+          RAR_PASSWORD: ${{ secrets.RAR_PASSWORD }}
+        run: python parse_rar.py
+
+      - name: Verify extract & JS
+        run: |
+          ls -la *.txt items_generated.js || echo "Missing files?"
+          head -5 items_generated.js
+
+      - name: Embed JS into HTML (robust)
+        run: |
+          python3 -c "
+import re, json
+with open('items_generated.js', 'r') as f:
+    js = f.read()
+data = json.loads(js[15:-1])  # Strip 'const items = {};'
+with open('item_directory.html', 'r') as f:
+    html = f.read()
+html = re.sub(r'const items = \[{2}.*?};', f'const items = {json.dumps(data)};', html, flags=re.DOTALL)
+with open('item_directory_built.html', 'w') as f:
+    f.write(html)
+          "
+          mv item_directory_built.html item_directory.html
+
+      - name: Commit built files
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "🤖 Auto-build: RAR extracted & parsed [skip ci]"
+          file_pattern: "*.html items_generated.js"
+
+      - name: Deploy to GitHub Pages
+        if: github.ref == 'refs/heads/main'
+        uses: actions/deploy-pages@v4  # Official, simpler than peaceiris
