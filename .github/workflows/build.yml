@@ -1,0 +1,35 @@
+name: Extract RAR → Build Directory
+on: [push, pull_request, workflow_dispatch, release]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install unrar & rarfile
+      run: |
+        sudo apt update
+        sudo apt install unrar -y
+        pip install rarfile requests
+    
+    - name: Extract/parse RAR
+      run: python parse_rar.py
+      
+    - name: Embed into HTML
+      run: |
+        awk '/const items =/{system("cat items_generated.js"); next} 1' item_directory.html > item_directory_built.html
+        mv item_directory_built.html item_directory.html
+    
+    - name: Commit built HTML
+      uses: stefanzweifel/git-auto-commit-action@v5
+      with:
+        commit_message: "🤖 Auto-build: RAR extracted & parsed"
+        file_pattern: item_directory.html
+    
+    - name: Deploy to Pages
+      if: github.ref == 'refs/heads/main'
+      uses: peaceiris/actions-gh-pages@v4
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: ./
