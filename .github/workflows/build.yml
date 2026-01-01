@@ -1,40 +1,39 @@
-name: Extract RAR → Build Directory
-
-on: 
-  push:
-  pull_request:
-  workflow_dispatch:
-  release:
-
+name: Build from Repo RAR
+on: [push, workflow_dispatch]
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      
-      - name: Install unrar & rarfile
-        run: |
-          sudo apt update
-          sudo apt install unrar -y
-          pip install rarfile requests
-      
-      - name: Extract/parse RAR
-        run: python parse_rar.py
-      
-      - name: Embed into HTML
-        run: |
-          awk '/const items =/{system("cat items_generated.js"); next} 1' item_directory.html > item_directory_built.html
-          mv item_directory_built.html item_directory.html
-      
-      - name: Commit built HTML
-        uses: stefanzweifel/git-auto-commit-action@v5
-        with:
-          commit_message: "🤖 Auto-build: RAR extracted & parsed"
-          file_pattern: item_directory.html items_generated.js
-      
-      - name: Deploy to Pages
-        if: github.ref == 'refs/heads/main'
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./
+    - uses: actions/checkout@v4
+    - name: Install deps
+      run: |
+        sudo apt update && sudo apt install unrar -y
+        pip install rarfile
+    - name: Extract RAR with Secret Password
+      env:
+        RAR_PASSWORD: ${{ secrets.RAR_PASSWORD }}
+      run: |
+        python -c "
+from rarfile import RarFile
+rf = RarFile('OuterWorld2ItemIDs.rar')  # Repo root RAR
+rf.setpassword('$RAR_PASSWORD')
+rf.extractall('extracted')
+print('Extracted RAR')
+        "
+    - name: Parse TXT to JS
+      run: python parse_rar.py  # Processes extracted/*.txt -> itemsgenerated.js
+    - name: Embed JS into HTML & Cleanup
+      run: |
+        JS=$(cat itemsgenerated.js)
+        sed -i "s|const items = .*;|$JS  // Embedded from RAR|" item_directory.html
+        rm -rf extracted itemsgenerated.js  # No TXT/JSON committed
+    - name: Commit HTML Only
+      uses: stefanzweifel/git-auto-commit-action@v5
+      with:
+        commit_message: 'Build: RAR extracted & embedded'
+        file_pattern: '*.html'
+    - name: Deploy
+      uses: peaceiris/actions-gh-pages@v4
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: ./
