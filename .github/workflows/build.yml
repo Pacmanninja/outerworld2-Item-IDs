@@ -5,34 +5,36 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
     - name: Install deps
-      run: |
-        sudo apt update && sudo apt install unrar -y
-        pip install rarfile
-    - name: Extract RAR with Secret Password
+      run: pip install rarfile
+    - name: Extract RAR
       env:
         RAR_PASSWORD: ${{ secrets.RAR_PASSWORD }}
       run: |
         python -c "
-from rarfile import RarFile
-rf = RarFile('OuterWorld2ItemIDs.rar')  # Repo root RAR
+import rarfile
+rf = rarfile.RarFile('OuterWorld2ItemIDs.rar')
 rf.setpassword('$RAR_PASSWORD')
 rf.extractall('extracted')
-print('Extracted RAR')
+print('RAR extracted')
         "
-    - name: Parse TXT to JS
-      run: python parse_rar.py  # Processes extracted/*.txt -> itemsgenerated.js
-    - name: Embed JS into HTML & Cleanup
+    - name: Parse to JS
+      run: python parse_rar.py
+    - name: Embed & Cleanup
       run: |
-        JS=$(cat itemsgenerated.js)
-        sed -i "s|const items = .*;|$JS  // Embedded from RAR|" item_directory.html
-        rm -rf extracted itemsgenerated.js  # No TXT/JSON committed
-    - name: Commit HTML Only
-      uses: stefanzweifel/git-auto-commit-action@v5
+        sed -i "/const items =/c\\
+const items = $(cat itemsgenerated.js); // From RAR" item_directory.html
+        rm -rf extracted itemsgenerated.js *.txt
+    - uses: stefanzweifel/git-auto-commit-action@v5
       with:
-        commit_message: 'Build: RAR extracted & embedded'
-        file_pattern: '*.html'
+        commit_message: 'Build: RAR embedded'
+        file_pattern: item_directory.html
     - name: Deploy
+      if: github.ref == 'refs/heads/main'
       uses: peaceiris/actions-gh-pages@v4
       with:
         github_token: ${{ secrets.GITHUB_TOKEN }}
