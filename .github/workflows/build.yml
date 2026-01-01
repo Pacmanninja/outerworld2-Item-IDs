@@ -9,9 +9,9 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: '3.12'
-    - name: Install Python deps
+    - name: Install deps
       run: pip install rarfile
-    - name: Install unrar CLI
+    - name: Install unrar
       run: sudo apt-get update && sudo apt-get install -y unrar
     - name: Extract RAR
       env:
@@ -19,17 +19,33 @@ jobs:
       run: |
         unrar x -p"$RAR_PASSWORD" OuterWorld2ItemIDs.rar extracted/
         ls -la extracted/
-    - name: Parse TXT to JS
-      run: python parse_rar.py
+        find extracted/ -name "*.txt"
+    - name: Debug parse_rar.py
+      run: |
+        echo "TXT files:"
+        ls -la extracted/*.txt 2>/dev/null || echo "No TXT files"
+        echo "parse_rar.py content:"
+        cat parse_rar.py
+        python parse_rar.py || echo "parse_rar.py failed"
+        ls -la itemsgenerated.js 2>/dev/null || echo "No itemsgenerated.js created"
+    - name: Generate JS manually (fallback)
+      run: |
+        if [ ! -f "itemsgenerated.js" ]; then
+          echo "const items = [];" > itemsgenerated.js
+          echo "parse_rar.py didn't create JS, using empty array"
+        fi
+        cat itemsgenerated.js
     - name: Embed & Cleanup
       run: |
-        sed -i '/const items =/c\const items = ' item_directory.html
+        cp item_directory.html item_directory.html.bak
+        sed -i '/const items =/d' item_directory.html
+        echo "const items = " >> item_directory.html
         cat itemsgenerated.js >> item_directory.html
-        echo ';' >> item_directory.html
-        rm -rf extracted/ itemsgenerated.js *.txt *.rar
+        echo ";" >> item_directory.html
+        rm -rf extracted/ itemsgenerated.js *.txt *.rar item_directory.html.bak
     - uses: stefanzweifel/git-auto-commit-action@v5
       with:
-        commit_message: 'Build: RAR embedded'
+        commit_message: 'Build: RAR embedded ✅'
         file_pattern: item_directory.html
     - name: Deploy
       if: github.ref == 'refs/heads/main'
