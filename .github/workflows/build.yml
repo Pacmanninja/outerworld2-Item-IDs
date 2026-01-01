@@ -1,55 +1,127 @@
 name: Extract RAR → Build Directory
 
-on: [push, pull_request, workflow_dispatch, release]
+on: 
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+  release:
+    types: [ published ]
 
 permissions:
-  contents: write  # For auto-commit
-  pages: write     # For gh-pages
-  id-token: write
+  contents: write      # Auto-commit changes
+  pages: write         # Deploy to Pages
+  id-token: write      # OIDC auth
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for commits
 
-      - name: Install deps
+      - name: Install system deps
         run: |
-          sudo apt update
-          sudo apt install -y unrar
-          pip install rarfile requests
+          sudo apt-get update
+          sudo apt-get install -y unrar
 
-      - name: Extract/parse RAR
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Python deps
+        run: pip install rarfile requests
+
+      - name: Extract & Parse RAR
         env:
           RAR_PASSWORD: ${{ secrets.RAR_PASSWORD }}
         run: python parse_rar.py
 
-      - name: Verify extract & JS
+      - name: Verify extraction
         run: |
-          ls -la *.txt items_generated.js || echo "Missing files?"
-          head -5 items_generated.js
+          echo "=== Extracted files ==="
+          ls -la extracted/ *.txt items_generated.js 2>/dev/null || echo "No extracted/ dir"
+          echo "=== JS preview ==="
+          head -20 items_generated.js || echo "No JS generated"
+          echo "=== File count ==="
+          find . -name "*.txt" | wc -l
 
       - name: Embed JS into HTML (robust)
         run: |
-          python3 -c "
-import re, json
-with open('items_generated.js', 'r') as f:
-    js = f.read()
-data = json.loads(js[15:-1])  # Strip 'const items = {};'
-with open('item_directory.html', 'r') as f:
-    html = f.read()
-html = re.sub(r'const items = \[{2}.*?};', f'const items = {json.dumps(data)};', html, flags=re.DOTALL)
-with open('item_directory_built.html', 'w') as f:
-    f.write(html)
-          "
+          python3 << 'EOF'
+          import re
+          import json
+          import sys
+          
+          try:
+              with open('items_generated.js', 'r') as f:
+                  js_content = f.read().strip()
+              
+              # Extract JSON object: const items = {...};
+              match = re.match(r'const\s+items\s*=\s*(\{.*?\});?\s*$', js_content, re.DOTALL)
+              if not match:
+                  print("ERROR: No valid 'const items = {...};' in items_generated.js")
+                  sys.exit(1)
+              
+              data = json.loads(match.group(1))
+              print(f"Loaded {sum(len(v) for v in data.values())} items across {len(data)} categories")
+              
+              with open('item_directory.html', 'r') as f:
+                  html = f.read()
+              
+              # Replace placeholder const items = [...] with real data
+              html = re.sub(
+                  r'const items = \[{2}.*?};',
+                  f'const items = {json.dumps(data, indent=2)};',
+                  html,
+                  flags=re.DOTALL
+              )
+              
+              with open('item_directory_built.html', 'w') as f:
+                  f.write(html)
+              
+              print("✅ HTML updated with live data")
+              
+          except FileNotFoundError as e:
+              print(f"❌ Missing file: {e}")
+              sys.exit(1)
+          except json.JSONDecodeError as e:
+              print(f"❌ Invalid JSON: {e}")
+              sys.exit(1)
+          except Exception as e:
+              print(f"❌ Error: {e}")
+              sys.exit(1)
+          EOF
           mv item_directory_built.html item_directory.html
 
-      - name: Commit built files
+      - name: Commit built artifacts
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "🤖 Auto-build: RAR extracted & parsed [skip ci]"
-          file_pattern: "*.html items_generated.js"
+          commit_message: "🤖 Auto-build: RAR → ${{ github.sha }} [skip ci] [skip actions]"
+          file_pattern: |
+            item_directory.html
+            items_generated.js
+            *.txt
+          branch: main
 
-      - name: Deploy to GitHub Pages
+      - name: Setup Pages (if main)
         if: github.ref == 'refs/heads/main'
-        uses: actions/deploy-pages@v4  # Official, simpler than peaceiris
+        id: pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact (if main)
+        if: github.ref == 'refs/heads/main'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: '.'
+
+      - name: Deploy to GitHub Pages (if main)
+        if: github.ref == 'refs/heads/main'
+        uses: actions/deploy-pages@v4
