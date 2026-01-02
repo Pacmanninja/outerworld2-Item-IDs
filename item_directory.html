@@ -53,7 +53,7 @@
             border-left: 5px solid #666; position: relative; overflow: hidden;
         }
         li:hover { 
-            background: linear-gradient(90deg, #00ff88, #00ccff); 
+            background: linear-gradient(90deg, #102F43, #00ccff); 
             border-left-color: #fff; transform: translateX(8px) scale(1.02); 
             box-shadow: 0 8px 25px rgba(0,255,136,0.4);
         }
@@ -84,7 +84,7 @@
 <body>
     <div class="header">
         <h1>🛠️ Outer Worlds 2 Item Directory</h1>
-        <p class="subtitle">Live search across 200k+ items. Double-click → Copies AddItemDebug. Auto-built from RAR [file:58][file:61][file:62][file:59][file:63][file:60]</p>
+        <p class="subtitle">Search For any Item</p>
     </div>
     
     <input type="text" id="search" placeholder="🔍 Type instantly (rifle, armor, plasma, auntie, rocket, ammo...) – filters all categories live!">
@@ -96,18 +96,51 @@
     const items = {
       // Auto-replaced by GitHub Actions from RAR TXT files
     };
+    function displayItems(filteredItems = items) {
+      const results = document.getElementById('results');
+      const stats = document.getElementById('stats');
+      let total = 0;
+      let html = '';
+      
+      for (const [category, itemList] of Object.entries(filteredItems)) {
+        const count = itemList.length;
+        if (count === 0) continue;
+        total += count;
+        html += `
+          <div class="category">
+            <h2>${category} <span class="category-count">${count}</span></h2>
+            <ul>${itemList.map(item => {
+              const basename = item.split('/').pop();
+              const displayPath = item.toLowerCase();
+              return `<li ondblclick="navigator.clipboard.writeText('${basename}')">${displayPath}</li>`;
+            }).join('')}</ul>
+          </div>
+        `;
+      }
+      
+      results.innerHTML = html || '<div class="no-results"><i>🔍</i>No results found</div>';
+      stats.textContent = `Showing ${total} items`;
+    }
+    
+    // Search filter
+    document.getElementById('search').addEventListener('input', (e) => {
+      const query = e.target.value.toLowerCase().trim();
+      const filtered = {};
+      
+      for (const [category, itemList] of Object.entries(items)) {
+        const matches = itemList.filter(item => 
+          category.toLowerCase().includes(query) || 
+          item.toLowerCase().includes(query)
+        );
+        if (matches.length) filtered[category] = matches;
+      }
+      
+      displayItems(filtered);
+    });
+    
+    // Load initial items
+    displayItems();
     </script>
 
 </body>
 </html>
-;
-  "Items": [],
-  "Pets": [],
-  "Grenade Explosive": [],
-  "Weap Weapons": [],
-  "Traits": [],
-  "Armor": []
-};;
-const items = 
-const items = [];
-;
