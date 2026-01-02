@@ -34,42 +34,46 @@ jobs:
           ls -la itemsgenerated.js || echo "No JS generated"
           head -20 itemsgenerated.js || echo "Empty/missing"
           jq '. | keys | length' itemsgenerated.js 2>/dev/null || echo "No categories"
-      - name: Embed JS → index.html  # FIXED - Bulletproof regex + backup
+      - name: Embed JS → item_directory.html  # Targets ONLY auto-replace script block
         run: |
           python3 << EOF
           import re
           import json
-          # Read JS - strip whitespace
+          
+          # Read generated JS
           with open('itemsgenerated.js', 'r') as f:
               js_content = f.read().strip()
-          # Extract EXACTLY: const items = {...};
-          match = re.search(r'const\s+items\s*=\s*(\{.*?\});?\s*$', js_content, re.DOTALL)
+          
+          # Extract object data: const items = {...};
+          match = re.search(r'const\s+items\s*=\s*(\{.*?\});?\s*$', js_content, re.DOTALL | re.MULTILINE)
           if not match:
-              print("❌ No 'const items = {...};' match")
+              print("❌ No 'const items = {...};' in itemsgenerated.js")
               exit(1)
+          
           data_str = match.group(1)
           data = json.loads(data_str)
           total_items = sum(len(lst) for lst in data.values())
           print(f"✅ Parsed {len(data)} categories, {total_items} items")
           
-          # Read template
+          # Target ONLY the specific script block with comment
+          template_pattern = r'<script>\s*const items\s*=\s*\{[^}]*// Auto-replaced by GitHub Actions from RAR TXT files[^}]*\};\s*</script>'
+          
           with open('item_directory.html', 'r') as f:
               html = f.read()
           
-          # Replace ONLY script block containing "const items" 
-          pattern = r'<script[^>]*>.*const\s+items\s*=.*?</script>'
-          replacement = f'<script>const items = {json.dumps(data, indent=2)};</script>'
-          html = re.sub(pattern, replacement, html, flags=re.DOTALL | re.IGNORECASE)
+          if not re.search(template_pattern, html):
+              print("❌ No auto-replace script block found in HTML")
+              exit(1)
           
-          # Backup: If no match, append new script
-          if 'const items =' not in html:
-              html = html.replace('</body>', f'<script>const items = {json.dumps(data, indent=2)};</script></body>')
+          # Replace with live data (minified for size)
+          replacement = f'<script>const items={json.dumps(data, separators=(",",":"))};</script>'
           
-          with open('index.html', 'w') as f:
+          html = re.sub(template_pattern, replacement, html, flags=re.DOTALL)
+          
+          with open('item_directory.html', 'w') as f:
               f.write(html)
-          print("✅ index.html ready - check size:")
-          import os
-          print(f"index.html: {os.path.getsize('index.html')} bytes")
+          
+          print("✅ Updated HTML with live items")
           EOF
       - name: Commit
         uses: stefanzweifel/git-auto-commit-action@v5
