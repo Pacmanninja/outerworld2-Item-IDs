@@ -20,7 +20,7 @@ jobs:
       - name: Install deps
         run: |
           sudo apt update -qq
-          sudo apt install -y unrar
+          sudo apt install -y unrar jq
           pip install rarfile requests
       - name: Extract/parse RAR
         env:
@@ -29,33 +29,39 @@ jobs:
         run: python parserar.py
       - name: Verify JS
         run: |
-          ls -la itemsgenerated.js
-          head -20 itemsgenerated.js
-          echo "Items count: $(jq '.Items | length' itemsgenerated.js)"
+          ls -la itemsgenerated.js || echo "No JS generated"
+          head -20 itemsgenerated.js || echo "Empty/missing"
+          jq '.Items | length' itemsgenerated.js 2>/dev/null || echo "No Items"
       - name: Embed JS → index.html
-        run: python3 - <<EOF
-import re, json
-with open('itemsgenerated.js', 'r') as f:
-    js = f.read().strip()
-match = re.match(r'const items\s*=\s*(\{.*\});?', js, re.DOTALL)
-if not match:
-    print("ERROR: No valid 'const items' in itemsgenerated.js")
+        run: |
+          python3 << 'EOF'
+import re
+import json
+try:
+    with open("itemsgenerated.js", "r") as f:
+        js = f.read().strip()
+    match = re.match(r"const items\s*=\s*(\{.*\});?", js, re.DOTALL)
+    if not match:
+        print("ERROR: No valid const items in itemsgenerated.js")
+        exit(1)
+    data = json.loads(match.group(1))
+    total = sum(len(v) for v in data.values())
+    print(f"Loaded {total} items across {len(data)} categories")
+    with open("item_directory.html", "r") as f:
+        html = f.read()
+    html = re.sub(r"const items\s*=\{[^}]*?\}", f"const items = {json.dumps(data, indent=2)}", html, flags=re.DOTALL)
+    with open("index.html", "w") as f:
+        f.write(html)
+    print("index.html updated")
+except Exception as e:
+    print(f"Error: {e}")
     exit(1)
-data = json.loads(match.group(1))
-total = sum(len(v) for v in data.values())
-print(f"Loaded {total} items across {len(data)} categories")
-with open('item_directory.html', 'r') as f:  # Your current HTML
-    html = f.read()
-html = re.sub(r'const items\s*=\{[^}]*\}', f'const items = {json.dumps(data, indent=2)}', html, flags=re.DOTALL)
-with open('index.html', 'w') as f:
-    f.write(html)
-print("index.html updated")
 EOF
       - name: Commit
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "Auto-build RAR → index.html ({{ sha }})"
-          file_pattern: index.html itemsgenerated.js
+          commit_message: Auto-build RAR → index.html (${{ github.sha }})
+          file_pattern: index.html
       - name: Setup Pages
         if: github.ref == 'refs/heads/main'
         uses: actions/configure-pages@v5
