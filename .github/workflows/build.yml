@@ -1,5 +1,6 @@
 name: Extract RAR & Build Directory
-on: [push, pull_request, workflow_dispatch, release]
+on: 
+  [push, pull_request, workflow_dispatch, release]
 permissions:
   contents: write
   pages: write
@@ -21,24 +22,25 @@ jobs:
         run: |
           sudo apt update -qq
           sudo apt install -y unrar jq
-          pip install rarfile requests
-      - name: Extract/parse RAR
+          pip install requests
+      - name: Extract RAR
         env:
           RAR_PASSWORD: ${{ secrets.RAR_PASSWORD }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: unrar x -p"$RAR_PASSWORD" OuterWorld2ItemIDs.rar .
+      - name: Parse TXT to JS
         run: python parse_rar.py
       - name: Verify JS
         run: |
           ls -la itemsgenerated.js || echo "No JS generated"
           head -20 itemsgenerated.js || echo "Empty/missing"
-          jq '.Items | length' itemsgenerated.js 2>/dev/null || echo "No Items"
+          jq '. | keys | length' itemsgenerated.js 2>/dev/null || echo "No categories"
       - name: Embed JS → index.html
         run: sed -i "s/const items = {[^}]*}/$(cat itemsgenerated.js)/" item_directory.html && mv item_directory.html index.html
       - name: Commit
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: Auto-build RAR → index.html (${{ github.sha }})
-          file_pattern: index.html
+          file_pattern: index.html itemsgenerated.js
       - name: Setup Pages
         if: github.ref == 'refs/heads/main'
         uses: actions/configure-pages@v5
