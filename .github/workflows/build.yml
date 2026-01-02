@@ -33,30 +33,7 @@ jobs:
           head -20 itemsgenerated.js || echo "Empty/missing"
           jq '.Items | length' itemsgenerated.js 2>/dev/null || echo "No Items"
       - name: Embed JS → index.html
-        run: |
-          python3 << 'EOF'
-import re
-import json
-try:
-    with open("itemsgenerated.js", "r") as f:
-        js = f.read().strip()
-    match = re.match(r"const items\s*=\s*(\{.*\});?", js, re.DOTALL)
-    if not match:
-        print("ERROR: No valid const items in itemsgenerated.js")
-        exit(1)
-    data = json.loads(match.group(1))
-    total = sum(len(v) for v in data.values())
-    print(f"Loaded {total} items across {len(data)} categories")
-    with open("item_directory.html", "r") as f:
-        html = f.read()
-    html = re.sub(r"const items\s*=\{[^}]*?\}", f"const items = {json.dumps(data, indent=2)}", html, flags=re.DOTALL)
-    with open("index.html", "w") as f:
-        f.write(html)
-    print("index.html updated")
-except Exception as e:
-    print(f"Error: {e}")
-    exit(1)
-EOF
+        run: sed -i "s/const items = {[^}]*}/$(cat itemsgenerated.js)/" item_directory.html && mv item_directory.html index.html
       - name: Commit
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
