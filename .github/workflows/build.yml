@@ -35,12 +35,31 @@ jobs:
           head -20 itemsgenerated.js || echo "Empty/missing"
           jq '. | keys | length' itemsgenerated.js 2>/dev/null || echo "No categories"
       - name: Embed JS → index.html
-        run: sed -i "s/const items = {[^}]*}/$(cat itemsgenerated.js)/" item_directory.html && mv item_directory.html index.html
+        run: |
+          python3 << EOF
+          import re
+          import json
+          with open('itemsgenerated.js', 'r') as f:
+              js = f.read()
+          match = re.search(r'const items = ({.*?});', js, re.DOTALL)
+          if match:
+              data = json.loads(match.group(1))
+              print(f"Loaded {len(data)} categories")
+          else:
+              print("No const items found")
+              exit(1)
+          with open('item_directory.html', 'r') as f:
+              html = f.read()
+          html = re.sub(r'const items = {[^}]*}', f'const items = {json.dumps(data, indent=2)}', html, flags=re.DOTALL)
+          with open('index.html', 'w') as f:
+              f.write(html)
+          print("index.html updated")
+          EOF
       - name: Commit
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: Auto-build RAR → index.html (${{ github.sha }})
-          file_pattern: index.html itemsgenerated.js
+          file_pattern: index.html
       - name: Setup Pages
         if: github.ref == 'refs/heads/main'
         uses: actions/configure-pages@v5
