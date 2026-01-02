@@ -26,7 +26,7 @@ jobs:
         env:
           RAR_PASSWORD: ${{ secrets.RAR_PASSWORD }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: python parserar.py
+        run: python parse_rar.py
       - name: Verify JS
         run: |
           ls -la itemsgenerated.js || echo "No JS generated"
