@@ -34,37 +34,48 @@ jobs:
           ls -la itemsgenerated.js || echo "No JS generated"
           head -20 itemsgenerated.js || echo "Empty/missing"
           jq '. | keys | length' itemsgenerated.js 2>/dev/null || echo "No categories"
-      - name: Embed JS → index.html
+      - name: Embed JS → index.html  # FIXED - Bulletproof regex + backup
         run: |
           python3 << EOF
           import re
           import json
+          # Read JS - strip whitespace
           with open('itemsgenerated.js', 'r') as f:
-              js = f.read()
-          # Extract object precisely (handles no trailing ;)
-          match = re.match(r'const items\\s*=\\s*(\\{[\\s\\S]*?\\}\\s*);?\\s*$', js.strip(), re.MULTILINE)
+              js_content = f.read().strip()
+          # Extract EXACTLY: const items = {...};
+          match = re.search(r'const\s+items\s*=\s*(\{.*?\});?\s*$', js_content, re.DOTALL)
           if not match:
-              print("No valid 'const items = {...};' in itemsgenerated.js")
+              print("❌ No 'const items = {...};' match")
               exit(1)
-          data = json.loads(match.group(1))
-          print(f"✅ Loaded {len(data)} categories, {sum(len(v) for v in data.values())} items")
+          data_str = match.group(1)
+          data = json.loads(data_str)
+          total_items = sum(len(lst) for lst in data.values())
+          print(f"✅ Parsed {len(data)} categories, {total_items} items")
           
+          # Read template
           with open('item_directory.html', 'r') as f:
               html = f.read()
-          # Target ONLY the single clean placeholder
-          html = re.sub(r'<script>\\s*const items =\\s*\\{[^}]*\\};?\\s*\\</script>', 
-                        f'<script>\\nconst items = {json.dumps(data, indent=2)};\\n</script>', 
-                        html, flags=re.DOTALL | re.MULTILINE)
+          
+          # Replace ONLY script block containing "const items" 
+          pattern = r'<script[^>]*>.*const\s+items\s*=.*?</script>'
+          replacement = f'<script>const items = {json.dumps(data, indent=2)};</script>'
+          html = re.sub(pattern, replacement, html, flags=re.DOTALL | re.IGNORECASE)
+          
+          # Backup: If no match, append new script
+          if 'const items =' not in html:
+              html = html.replace('</body>', f'<script>const items = {json.dumps(data, indent=2)};</script></body>')
           
           with open('index.html', 'w') as f:
               f.write(html)
-          print("✅ index.html generated - clean single script")
+          print("✅ index.html ready - check size:")
+          import os
+          print(f"index.html: {os.path.getsize('index.html')} bytes")
           EOF
       - name: Commit
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: Auto-build RAR → index.html (${{ github.sha }})
-          file_pattern: index.html
+          file_pattern: index.html .nojekyll
       - name: Setup Pages
         if: github.ref == 'refs/heads/main'
         uses: actions/configure-pages@v5
