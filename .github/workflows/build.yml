@@ -41,19 +41,24 @@ jobs:
           import json
           with open('itemsgenerated.js', 'r') as f:
               js = f.read()
-          match = re.search(r'const items = ({.*?});', js, re.DOTALL)
-          if match:
-              data = json.loads(match.group(1))
-              print(f"Loaded {len(data)} categories")
-          else:
-              print("No const items found")
+          # Extract object precisely (handles no trailing ;)
+          match = re.match(r'const items\\s*=\\s*(\\{[\\s\\S]*?\\}\\s*);?\\s*$', js.strip(), re.MULTILINE)
+          if not match:
+              print("No valid 'const items = {...};' in itemsgenerated.js")
               exit(1)
+          data = json.loads(match.group(1))
+          print(f"✅ Loaded {len(data)} categories, {sum(len(v) for v in data.values())} items")
+          
           with open('item_directory.html', 'r') as f:
               html = f.read()
-          html = re.sub(r'const items = {[^}]*}', f'const items = {json.dumps(data, indent=2)}', html, flags=re.DOTALL)
+          # Target ONLY the single clean placeholder
+          html = re.sub(r'<script>\\s*const items =\\s*\\{[^}]*\\};?\\s*\\</script>', 
+                        f'<script>\\nconst items = {json.dumps(data, indent=2)};\\n</script>', 
+                        html, flags=re.DOTALL | re.MULTILINE)
+          
           with open('index.html', 'w') as f:
               f.write(html)
-          print("index.html updated")
+          print("✅ index.html generated - clean single script")
           EOF
       - name: Commit
         uses: stefanzweifel/git-auto-commit-action@v5
